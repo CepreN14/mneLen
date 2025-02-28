@@ -217,5 +217,5 @@ def list_rooms_api(user_id):
         return [{"id": room.id, "name": room.name} for room in user_rooms]
 
 if __name__ == '__main__':
-    logging.info("Запуск Flask приложения")
-    app.run(debug=True)
+    logging.info("Starting Flask app")
+    app.run(debug=True, host='0.0.0.0') 
