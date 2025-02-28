@@ -1,3 +1,4 @@
+# bot.py
 import os
 import telegram
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, WebAppInfo, KeyboardButton
@@ -5,8 +6,8 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, fil
 from dotenv import load_dotenv
 import pytz
 from datetime import time, datetime
-from app import authenticate_user, list_rooms_api, add_user_to_room_api, create_room_api
 import logging
+import requests  # Убедитесь, что requests установлен
 
 load_dotenv()
 
@@ -19,7 +20,7 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 WEB_APP_URL = os.getenv("WEB_APP_URL")
 
 # Состояния для диалога
-SET_NAME, SET_TIMEZONE, SET_WORKING_HOURS, SET_WORKING_HOURS_END = range(4)
+SET_NAME, SET_TIMEZONE, SET_WORKING_HOURS, SET_WORKING_HOURS_END, SET_ROLE = range(5)
 
 # Вспомогательные функции
 def is_admin(user_id):
@@ -28,11 +29,23 @@ def is_admin(user_id):
 # --- Обработчики ---
 async def start(update: Update, context: CallbackContext):
     """Обрабатывает команду /start."""
-    user = authenticate_user(update.message.from_user.id)
+    user = await authenticate_user(update, context)
 
-    if not user or not user.display_name: # Если пользователь не аутентифицирован или у него нет имени
+    if not user or not user.get('display_name'): # Если пользователь не аутентифицирован или у него нет имени
       await update.message.reply_text("Привет! Я чат-бот для работы с Telegram Web App. Пожалуйста, введите ваше имя, которое будет отображаться в чатах:")
       return SET_NAME
+
+    if not user.get('role'):
+        keyboard = [
+            ["Разработчик", "Заказчик"]
+        ]
+        reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True)
+        await update.message.reply_text("Пожалуйста, выберите свою роль:", reply_markup=reply_markup)
+        return SET_ROLE
+
+    role = user.get('role')
+    welcome_message = f"Привет, {user.get('display_name')} ({role})! " \
+                      f"Нажмите кнопку, чтобы открыть веб-приложение:"
 
     if not WEB_APP_URL:
         await update.message.reply_text("Веб-приложение не настроено. Проверьте .env файл.")
@@ -45,7 +58,7 @@ async def start(update: Update, context: CallbackContext):
         )]
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    await update.message.reply_text("Нажмите кнопку, чтобы открыть веб-приложение:", reply_markup=reply_markup)
+    await update.message.reply_text(welcome_message, reply_markup=reply_markup)
     return ConversationHandler.END
 
 async def set_name(update: Update, context: CallbackContext):
@@ -105,8 +118,9 @@ async def set_working_hours_end(update: Update, context: CallbackContext):
 
         # Вызов API Flask backend
         try:
-            import requests
-            response = requests.post('http://127.0.0.1:5000/api/users', json=user_data)
+            #  API Endpoint URL
+            api_url = 'http://127.0.0.1:3000/api/users'
+            response = requests.post(api_url, json=user_data)
             response.raise_for_status()  # Вызвать исключение для плохих кодов статуса
             await update.message.reply_text(f"Ваши данные успешно сохранены.")
         except requests.exceptions.RequestException as e:
@@ -140,10 +154,16 @@ async def create_room(update: Update, context: CallbackContext):
         await update.message.reply_text("Пожалуйста, укажите название комнаты после команды /create_room.")
         return
 
+    #  API Endpoint URL
+    api_url = f'http://127.0.0.1:3000/api/rooms'
     try:
-        create_room_api(update.message.from_user.id, room_name)
+        headers = {'Content-Type': 'application/json'}
+        data = {'creator_id': update.message.from_user.id, 'room_name': room_name}
+        response = requests.post(api_url, headers=headers, json=data)
+        response.raise_for_status()
+
         await update.message.reply_text(f"Комната '{room_name}' успешно создана!")
-    except Exception as e:
+    except requests.exceptions.RequestException as e:
         logging.error(f"Ошибка при создании комнаты: {e}")
         await update.message.reply_text(f"Произошла ошибка при создании комнаты: {e}")
 
@@ -162,25 +182,88 @@ async def add_user_to_room(update: Update, context: CallbackContext):
 
     user_name, room_name = args
 
+    #  API Endpoint URL
+    api_url = f'http://127.0.0.1:3000/api/users'
     try:
-        add_user_to_room_api(user_name, room_name)
+        headers = {'Content-Type': 'application/json'}
+        data = {'user_name': user_name, 'room_name': room_name}
+        response = requests.post(api_url, headers=headers, json=data)
+        response.raise_for_status()
+
         await update.message.reply_text(f"Пользователь '{user_name}' успешно добавлен в комнату '{room_name}'!")
-    except Exception as e:
+    except requests.exceptions.RequestException as e:
         logging.error(f"Ошибка при добавлении пользователя в комнату: {e}")
         await update.message.reply_text(f"Произошла ошибка при добавлении пользователя: {e}")
 
 async def list_rooms(update: Update, context: CallbackContext):
     """Обрабатывает команду /list_rooms."""
     try:
-        rooms = list_rooms_api(update.message.from_user.id)
+        #  API Endpoint URL
+        api_url = f'http://127.0.0.1:3000/api/rooms'
+        response = requests.get(api_url)
+        response.raise_for_status()
+
+        rooms = response.json().get('rooms', [])
         if rooms:
             room_list = "\n".join([f"- {room['name']}" for room in rooms])
             await update.message.reply_text(f"Вы состоите в следующих комнатах:\n{room_list}")
         else:
             await update.message.reply_text("Вы не состоите ни в одной комнате.")
-    except Exception as e:
+    except requests.exceptions.RequestException as e:
         logging.error(f"Ошибка при получении списка комнат: {e}")
         await update.message.reply_text(f"Произошла ошибка при получении списка комнат: {e}")
+
+async def authenticate_user(update: Update, context: CallbackContext):
+    """Authenticates user, creates a new user if not exists."""
+    telegram_id = update.message.from_user.id
+    #  API Endpoint URL
+    api_url = f'http://127.0.0.1:3000/api/users/{telegram_id}' # Предполагаем, что есть GET endpoint для получения информации о пользователе
+    try:
+        response = requests.get(api_url)
+        response.raise_for_status()
+        user_data = response.json() # Ожидаем данные пользователя в JSON формате
+        return user_data
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Ошибка при аутентификации пользователя: {e}")
+        return None
+
+async def set_role(update: Update, context: CallbackContext):
+    """Sets the user's role."""
+    role = update.message.text.lower()
+    if role not in ["разработчик", "заказчик"]:
+        await update.message.reply_text("Пожалуйста, выберите роль из предложенных вариантов.")
+        return SET_ROLE
+
+    context.user_data['role'] = role
+
+    # Send data to API to save the user's role
+    user_id = update.message.from_user.id
+    user_name = context.user_data.get('user_name')
+    timezone = context.user_data.get('timezone')
+    start_time = context.user_data.get('working_hours_start')
+    end_time = context.user_data.get('working_hours_end')
+
+    user_data = {
+        "telegram_id": user_id,
+        "display_name": user_name,
+        "timezone": timezone,
+        "working_hours_start": start_time,
+        "working_hours_end": end_time,
+        "role": role # Send the role
+    }
+
+    try:
+        api_url = 'http://127.0.0.1:3000/api/users'
+        response = requests.post(api_url, json=user_data)
+        response.raise_for_status()
+
+        await update.message.reply_text(f"Роль успешно установлена как {role}.")
+        await start(update, context) # Go to the next step (start again)
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Ошибка при сохранении роли пользователя: {e}")
+        await update.message.reply_text("Произошла ошибка при сохранении роли. Пожалуйста, попробуйте позже.")
+
+    return ConversationHandler.END
 
 async def post_init(application: ApplicationBuilder):
     await application.bot.set_my_commands([
@@ -203,6 +286,7 @@ def main():
             SET_TIMEZONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_timezone)],
             SET_WORKING_HOURS: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_working_hours)],
             SET_WORKING_HOURS_END: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_working_hours_end)],
+            SET_ROLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_role)],
         },
         fallbacks=[CommandHandler('cancel', start)]  # Использовать start для отмены
     )
