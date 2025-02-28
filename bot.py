@@ -16,7 +16,7 @@ async def start(update: Update, context: CallbackContext):
     keyboard = [
         [telegram.KeyboardButton(
             text="Open Web App",
-            web_app=WebAppInfo(url="https://your-web-app-url.com") # todo: Replace url
+            web_app=WebAppInfo(url="https://cepren14.github.io/mneLen/") # todo: Replace url
         )]
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
