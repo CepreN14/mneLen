@@ -5,17 +5,37 @@ const app = {
     rooms: [],
     userId: null,
     init: async function() {
-        this.userId = Telegram.WebApp.initDataUnsafe.user.id; // Get user ID
+        if (Telegram.WebApp.initDataUnsafe && Telegram.WebApp.initDataUnsafe.user) {
+            this.userId = Telegram.WebApp.initDataUnsafe.user.id; // Получить ID пользователя
+            console.log("ID пользователя:", this.userId);
+        } else {
+            this.userId = 'unknown'; // Обработка случая, когда информация о пользователе недоступна
+            console.warn("ID пользователя недоступен. Проверьте настройки Telegram Web App SDK.")
+        }
         await this.fetchRooms();
         this.renderRooms();
     },
     fetchRooms: async function() {
-        const response = await fetch('https://cepren14.github.io/mneLen/api/rooms'); //TODO: Replace
-        this.rooms = await response.json();
+        try {
+            const response = await fetch('/api/rooms');
+            if (!response.ok) {
+                throw new Error(`Ошибка HTTP! Статус: ${response.status}`);
+            }
+            const data = await response.json();
+            this.rooms = data.rooms;
+        } catch (error) {
+            console.error("Ошибка при получении списка комнат:", error);
+            alert("Ошибка при получении списка комнат. Проверьте консоль для подробностей."); // Предоставить пользователю обратную связь
+        }
     },
     renderRooms: function() {
         const roomsDiv = document.getElementById('rooms');
-        this.rooms.rooms.forEach(room => {
+        roomsDiv.innerHTML = ''; // Очистить существующий контент
+        if (this.rooms.length === 0) {
+            roomsDiv.textContent = "Нет доступных комнат.";
+            return;
+        }
+        this.rooms.forEach(room => {
             const roomDiv = document.createElement('div');
             roomDiv.classList.add('room');
             roomDiv.textContent = room.name;
