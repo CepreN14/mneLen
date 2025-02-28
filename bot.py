@@ -8,6 +8,7 @@ import pytz
 from datetime import time, datetime
 import logging
 import requests  # Убедитесь, что requests установлен
+import json
 
 load_dotenv()
 
@@ -119,8 +120,9 @@ async def set_working_hours_end(update: Update, context: CallbackContext):
         # Вызов API Flask backend
         try:
             #  API Endpoint URL
-            api_url = 'http://127.0.0.1:3000/api/users'
-            response = requests.post(api_url, json=user_data)
+            api_url = 'http://127.0.0.1:8000/api/users'
+            headers = {'Content-Type': 'application/json'}
+            response = requests.post(api_url, headers=headers, data=json.dumps(user_data))
             response.raise_for_status()  # Вызвать исключение для плохих кодов статуса
             await update.message.reply_text(f"Ваши данные успешно сохранены.")
         except requests.exceptions.RequestException as e:
@@ -155,10 +157,10 @@ async def create_room(update: Update, context: CallbackContext):
         return
 
     #  API Endpoint URL
-    api_url = f'http://127.0.0.1:3000/api/rooms'
+    api_url = f'http://127.0.0.1:8000/api/rooms'
     try:
         headers = {'Content-Type': 'application/json'}
-        data = {'creator_id': update.message.from_user.id, 'room_name': room_name}
+        data = {'creator_id': update.message.from_user.id, 'name': room_name}  # Corrected key to "name"
         response = requests.post(api_url, headers=headers, json=data)
         response.raise_for_status()
 
@@ -183,7 +185,7 @@ async def add_user_to_room(update: Update, context: CallbackContext):
     user_name, room_name = args
 
     #  API Endpoint URL
-    api_url = f'http://127.0.0.1:3000/api/users'
+    api_url = f'http://127.0.0.1:8000/api/add_user_to_room'
     try:
         headers = {'Content-Type': 'application/json'}
         data = {'user_name': user_name, 'room_name': room_name}
@@ -199,16 +201,13 @@ async def list_rooms(update: Update, context: CallbackContext):
     """Обрабатывает команду /list_rooms."""
     try:
         #  API Endpoint URL
-        api_url = f'http://127.0.0.1:3000/api/rooms'
+        api_url = f'http://127.0.0.1:8000/api/rooms'
         response = requests.get(api_url)
         response.raise_for_status()
+        rooms = response.json()
+        room_list = "\n".join([f"- {room['name']}" for room in rooms])
+        await update.message.reply_text(f"Вы состоите в следующих комнатах:\n{room_list}")
 
-        rooms = response.json().get('rooms', [])
-        if rooms:
-            room_list = "\n".join([f"- {room['name']}" for room in rooms])
-            await update.message.reply_text(f"Вы состоите в следующих комнатах:\n{room_list}")
-        else:
-            await update.message.reply_text("Вы не состоите ни в одной комнате.")
     except requests.exceptions.RequestException as e:
         logging.error(f"Ошибка при получении списка комнат: {e}")
         await update.message.reply_text(f"Произошла ошибка при получении списка комнат: {e}")
@@ -217,7 +216,7 @@ async def authenticate_user(update: Update, context: CallbackContext):
     """Authenticates user, creates a new user if not exists."""
     telegram_id = update.message.from_user.id
     #  API Endpoint URL
-    api_url = f'http://127.0.0.1:3000/api/users/{telegram_id}' # Предполагаем, что есть GET endpoint для получения информации о пользователе
+    api_url = f'http://127.0.0.1:8000/api/users/{telegram_id}' # Предполагаем, что есть GET endpoint для получения информации о пользователе
     try:
         response = requests.get(api_url)
         response.raise_for_status()
@@ -249,12 +248,13 @@ async def set_role(update: Update, context: CallbackContext):
         "timezone": timezone,
         "working_hours_start": start_time,
         "working_hours_end": end_time,
-        "role": role # Send the role
+        "role": role
     }
 
     try:
-        api_url = 'http://127.0.0.1:3000/api/users'
-        response = requests.post(api_url, json=user_data)
+        api_url = 'http://127.0.0.1:8000/api/users'
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(api_url, headers=headers, data=json.dumps(user_data))
         response.raise_for_status()
 
         await update.message.reply_text(f"Роль успешно установлена как {role}.")
