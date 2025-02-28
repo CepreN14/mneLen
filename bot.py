@@ -1,4 +1,3 @@
-# bot.py
 import os
 import telegram
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, WebAppInfo, KeyboardButton
@@ -20,7 +19,7 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 WEB_APP_URL = os.getenv("WEB_APP_URL")
 
 # Состояния для диалога
-SET_NAME, SET_TIMEZONE, SET_WORKING_HOURS = range(3)
+SET_NAME, SET_TIMEZONE, SET_WORKING_HOURS, SET_WORKING_HOURS_END = range(4)
 
 # Вспомогательные функции
 def is_admin(user_id):
@@ -76,13 +75,10 @@ async def set_working_hours(update: Update, context: CallbackContext):
         context.user_data['working_hours_start'] = start_time
 
         await update.message.reply_text("Теперь время окончания рабочего дня в формате ЧЧ:ММ (например, 18:00)")
-        return SET_WORKING_HOURS + 1 # Переход к следующему состоянию для получения времени окончания
+        return SET_WORKING_HOURS_END  # Переход к следующему состоянию для получения времени окончания
     except ValueError:
         await update.message.reply_text("Неверный формат времени. Пожалуйста, введите время в формате ЧЧ:ММ (например, 09:00)")
         return SET_WORKING_HOURS # Повторить ввод времени начала
-    except IndexError:
-        await update.message.reply_text("Введите время окончания работы в формате ЧЧ:ММ (например, 18:00)")
-        return ConversationHandler.END
 
 async def set_working_hours_end(update: Update, context: CallbackContext):
     """Обрабатывает установку времени окончания рабочего дня пользователя."""
@@ -205,8 +201,8 @@ def main():
         states={
             SET_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_name)],
             SET_TIMEZONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_timezone)],
-            SET_WORKING_HOURS: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_working_hours),
-                                MessageHandler(filters.TEXT & ~filters.COMMAND, set_working_hours_end)],
+            SET_WORKING_HOURS: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_working_hours)],
+            SET_WORKING_HOURS_END: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_working_hours_end)],
         },
         fallbacks=[CommandHandler('cancel', start)]  # Использовать start для отмены
     )
