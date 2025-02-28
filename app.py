@@ -1,37 +1,42 @@
-# app.py (Flask Backend)
+# app.py
 import os
-import logging
-from flask import Flask, request, jsonify
-from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime, time
-from sqlalchemy.orm import Session
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, ForeignKey, Time, Enum
+from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, ForeignKey, Time, Enum, Text
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy.orm import sessionmaker, relationship, Session
 from sqlalchemy.sql import func
 from dotenv import load_dotenv
 import pytz
+from datetime import datetime, time
+from typing import Optional
 import enum
 
 load_dotenv()
 
-app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DATABASE_URL", "sqlite:///./app.db")
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
+app = FastAPI()
 
-# Logging configuration
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
+# Database Configuration
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./app.db")
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Define User Roles
+Base = declarative_base()
+
+# Dependency to get database session
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# --- Database Models ---
 class UserRole(enum.Enum):
     DEFAULT = "default"
     DEVELOPER = "developer"
     CUSTOMER = "customer"
-
-# Database Models (Simplified - adapt as needed)
-Base = declarative_base()
 
 class User(Base):
     __tablename__ = 'users'
@@ -67,200 +72,136 @@ class Message(Base):
     user = relationship("User")
     chat_room = relationship("ChatRoom")
 
-
 class UserChatRoom(Base):
     __tablename__ = 'user_chat_rooms'
     user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
     chat_room_id = Column(Integer, ForeignKey('chat_rooms.id'), primary_key=True)
 
-with app.app_context():
-    Base.metadata.create_all(bind=db.engine)
+Base.metadata.create_all(bind=engine)
 
-def get_db():
-    db_session = Session(db.engine)
-    try:
-        yield db_session
-    finally:
-        db_session.close()
+# --- Pydantic Models for Request/Response Validation ---
+class UserCreate(BaseModel):
+    telegram_id: int
+    display_name: str
+    timezone: Optional[str] = None
+    working_hours_start: Optional[str] = None  # Store as string for simplicity
+    working_hours_end: Optional[str] = None  # Store as string for simplicity
+    role: Optional[str] = None
 
-# API Endpoints (Examples)
-@app.route('/api/rooms', methods=['GET'])
-def list_rooms():
-    with app.app_context():
-        db: Session = next(get_db())
-        rooms = db.query(ChatRoom).all()
-        room_list = [{"id": room.id, "name": room.name} for room in rooms]
-        return jsonify(rooms=room_list)
+class ChatRoomCreate(BaseModel):
+    name: str
 
-@app.route('/api/messages', methods=['POST'])
-def create_message():
-    data = request.get_json()
-    user_id = data.get('user_id')
-    chat_room_id = data.get('chat_room_id')
-    text = data.get('text')
+class ChatRoomResponse(BaseModel):
+    id: int
+    name: str
 
-    if not all([user_id, chat_room_id, text]):
-        return jsonify({"error": "Отсутствуют необходимые данные"}), 400
+class MessageCreate(BaseModel):
+    chat_room_id: int
+    user_id: int
+    text: str
+    file_id: Optional[str] = None
+    file_type: Optional[str] = None
 
-    with app.app_context():
-        db: Session = next(get_db())
-        message = Message(user_id=user_id, chat_room_id=chat_room_id, text=text)
-        db.add(message)
-        db.commit()
-    return jsonify({"message": "Сообщение создано"}), 201
+class UserResponse(BaseModel):
+    telegram_id: int
+    display_name: str
+    timezone: Optional[str] = None
+    working_hours_start: Optional[str] = None
+    working_hours_end: Optional[str] = None
+    role: str
 
-@app.route('/api/users', methods=['POST'])
-def create_or_update_user():
-    """Создает или обновляет пользователя с часовым поясом и рабочим временем."""
-    data = request.get_json()
-    telegram_id = data.get('telegram_id')
-    display_name = data.get('display_name')
-    timezone_str = data.get('timezone')
-    working_hours_start_str = data.get('working_hours_start')
-    working_hours_end_str = data.get('working_hours_end')
-    role_str = data.get('role')  # Added role
+# --- API Endpoints ---
+@app.post("/api/users", status_code=status.HTTP_201_CREATED, response_model=UserResponse)
+async def create_or_update_user(user: UserCreate, db: Session = Depends(get_db)):
+    """Creates or updates a user with timezone and working hours."""
+    db_user = db.query(User).filter(User.telegram_id == user.telegram_id).first()
 
-    if not all([telegram_id, display_name]):
-        return jsonify({"error": "Отсутствуют необходимые данные"}), 400
-
-    with app.app_context():
-        db: Session = next(get_db())
-        user = db.query(User).filter_by(telegram_id=telegram_id).first()
-
-        if user:
-            # Update existing user
-            user.display_name = display_name
-            if timezone_str:
-                try:
-                    pytz.timezone(timezone_str)  # Проверить часовой пояс
-                    user.timezone = timezone_str
-                except pytz.exceptions.UnknownTimeZoneError:
-                    return jsonify({"error": "Неверный часовой пояс"}), 400
-            if working_hours_start_str:
-                try:
-                    user.working_hours_start = datetime.strptime(working_hours_start_str, "%H:%M").time()
-                except ValueError:
-                    return jsonify({"error": "Неверный формат времени начала работы"}), 400
-            if working_hours_end_str:
-                try:
-                    user.working_hours_end = datetime.strptime(working_hours_end_str, "%H:%M").time()
-                except ValueError:
-                    return jsonify({"error": "Неверный формат времени окончания работы"}), 400
-
-            if role_str:  # Update role only if provided
-                try:
-                    user.role = UserRole[role_str.upper()] # Convert to enum and set role
-                except KeyError:
-                    return jsonify({"error": "Неверная роль пользователя"}), 400
-
-            db.commit()
-            return jsonify({"message": "Пользователь успешно обновлен"}), 200
-        else:
-            # Create new user
+    if db_user:
+        # Update existing user
+        db_user.display_name = user.display_name
+        if user.timezone:
             try:
-                # Default Role
-                role = UserRole.DEFAULT
-                if role_str:
-                    try:
-                         role = UserRole[role_str.upper()]
-                    except ValueError:
-                        return jsonify({"error": "Неверная роль пользователя"}), 400
+                pytz.timezone(user.timezone)
+                db_user.timezone = user.timezone
+            except pytz.exceptions.UnknownTimeZoneError:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid timezone")
 
-                user = User(telegram_id=telegram_id, display_name=display_name, role=role)
-                if timezone_str:
-                    try:
-                        pytz.timezone(timezone_str) # Проверить часовой пояс
-                        user.timezone = timezone_str
-                    except pytz.exceptions.UnknownTimeZoneError:
-                        return jsonify({"error": "Неверный часовой пояс"}), 400
-                if working_hours_start_str:
-                    try:
-                        user.working_hours_start = datetime.strptime(working_hours_start_str, "%H:%M").time()
-                    except ValueError:
-                        return jsonify({"error": "Неверный формат времени начала работы"}), 400
-                if working_hours_end_str:
-                    try:
-                        user.working_hours_end = datetime.strptime(working_hours_end_str, "%H:%M").time()
-                    except ValueError:
-                        return jsonify({"error": "Неверный формат времени окончания работы"}), 400
+        if user.working_hours_start:
+            try:
+                datetime.strptime(user.working_hours_start, "%H:%M").time()
+                db_user.working_hours_start = datetime.strptime(user.working_hours_start, "%H:%M").time()
+            except ValueError:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid working hours start format")
 
-                db.add(user)
-                db.commit()
-                return jsonify({"message": "Пользователь успешно создан"}), 201
-            except Exception as e:
-                logging.error(f"Ошибка при создании/обновлении пользователя: {e}")
-                return jsonify({"error": f"Ошибка при создании/обновлении пользователя: {e}"}), 500
+        if user.working_hours_end:
+            try:
+                datetime.strptime(user.working_hours_end, "%H:%M").time()
+                db_user.working_hours_end = datetime.strptime(user.working_hours_end, "%H:%M").time()
+            except ValueError:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid working hours end format")
 
-@app.route('/api/users/<telegram_id>', methods=['GET'])
-def get_user(telegram_id):
+        if user.role:
+            try:
+                db_user.role = UserRole[user.role.upper()]
+            except KeyError:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user role")
+
+        db.commit()
+        db.refresh(db_user)
+        return db_user
+    else:
+        # Create new user
+        try:
+            role = UserRole.DEFAULT
+            if user.role:
+                try:
+                    role = UserRole[user.role.upper()]
+                except KeyError:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user role")
+
+            new_user = User(
+                telegram_id=user.telegram_id,
+                display_name=user.display_name,
+                timezone=user.timezone,
+                working_hours_start=datetime.strptime(user.working_hours_start, "%H:%M").time() if user.working_hours_start else None,
+                working_hours_end=datetime.strptime(user.working_hours_end, "%H:%M").time() if user.working_hours_end else None,
+                role=role
+            )
+            db.add(new_user)
+            db.commit()
+            db.refresh(new_user)
+            return new_user
+        except pytz.exceptions.UnknownTimeZoneError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid timezone")
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid data format: {e}")
+
+@app.get("/api/rooms", response_model=list[ChatRoomResponse])
+async def list_rooms(db: Session = Depends(get_db)):
+    """Lists all chat rooms."""
+    rooms = db.query(ChatRoom).all()
+    return rooms
+
+@app.post("/api/rooms", status_code=status.HTTP_201_CREATED, response_model=ChatRoomResponse)
+async def create_room(room: ChatRoomCreate, creator_id: int, db: Session = Depends(get_db)):
+    """Creates a new chat room."""
+    db_room = ChatRoom(name=room.name, creator_id=creator_id)
+    db.add(db_room)
+    db.commit()
+    db.refresh(db_room)
+    return db_room
+
+@app.get("/api/users/{telegram_id}", response_model=UserResponse)
+async def get_user(telegram_id: int, db: Session = Depends(get_db)):
     """Retrieves user data by Telegram ID."""
-    with app.app_context():
-        db: Session = next(get_db())
-        user = db.query(User).filter_by(telegram_id=telegram_id).first()
-
-        if user:
-            user_data = {
-                "telegram_id": user.telegram_id,
-                "display_name": user.display_name,
-                "timezone": user.timezone,
-                "working_hours_start": user.working_hours_start.strftime("%H:%M") if user.working_hours_start else None,
-                "working_hours_end": user.working_hours_end.strftime("%H:%M") if user.working_hours_end else None,
-                "role": user.role.value
-            }
-            return jsonify(user_data), 200
-        else:
-            return jsonify({"error": "Пользователь не найден"}), 404
-
-def authenticate_user(telegram_id):
-    """Authenticates user, creates a new user if not exists."""
-    with app.app_context():
-        db: Session = next(get_db())
-        user = db.query(User).filter_by(telegram_id=telegram_id).first()
+    user = db.query(User).filter(User.telegram_id == telegram_id).first()
+    if user:
         return user
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-def create_room_api(creator_id, room_name):
-    with app.app_context():
-        db: Session = next(get_db())
-        # Check if a room with this name already exists.
-        if db.query(ChatRoom).filter_by(name=room_name).first():
-            raise ValueError(f"Комната с именем '{room_name}' уже существует.")
-
-        room = ChatRoom(name=room_name, creator_id=creator_id)
-        db.add(room)
-        db.commit()
-
-        # Также добавить создателя в комнату
-        user_chat_room = UserChatRoom(user_id=creator_id, chat_room_id=room.id)
-        db.add(user_chat_room)
-        db.commit()
-        return room
-
-def add_user_to_room_api(user_name, room_name):
-    with app.app_context():
-        db: Session = next(get_db())
-
-        user = db.query(User).filter_by(display_name=user_name).first()
-        if not user:
-            raise ValueError(f"Пользователь с именем '{user_name}' не найден.")
-
-        room = db.query(ChatRoom).filter_by(name=room_name).first()
-        if not room:
-            raise ValueError(f"Комната с именем '{room_name}' не найдена.")
-
-        # Check if user is already in the room
-        if db.query(UserChatRoom).filter_by(user_id=user.id, chat_room_id=room.id).first():
-            raise ValueError(f"Пользователь '{user_name}' уже состоит в комнате '{room_name}'.")
-
-        user_chat_room = UserChatRoom(user_id=user.id, chat_room_id=room.id)
-        db.add(user_chat_room)
-        db.commit()
-
-def list_rooms_api(user_id):
-    with app.app_context():
-        db: Session = next(get_db())
-        user_rooms = db.query(ChatRoom).join(UserChatRoom).filter(UserChatRoom.user_id == user_id).all()
-        return [{"id": room.id, "name": room.name} for room in user_rooms]
-
-if __name__ == '__main__':
-    logging.info("Starting Flask app on port 3000")
-    app.run(debug=True, host='0.0.0.0', port=3000)
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"message": exc.detail},
+    )
