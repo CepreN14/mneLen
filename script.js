@@ -10,7 +10,7 @@ const app = {
         this.renderRooms();
     },
     fetchRooms: async function() {
-        const response = await fetch('/api/rooms'); //TODO: Replace
+        const response = await fetch('https://cepren14.github.io/mneLen/api/rooms'); //TODO: Replace
         this.rooms = await response.json();
     },
     renderRooms: function() {
