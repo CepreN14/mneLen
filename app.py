@@ -74,7 +74,7 @@ def get_db():
         db_session.close()
 
 # API Endpoints (Examples)
-@app.route('https://cepren14.github.io/mneLen/api/rooms', methods=['GET'])
+@app.route('/api/rooms', methods=['GET'])
 def list_rooms():
     db: Session = next(get_db())
     rooms = db.query(ChatRoom).all()
