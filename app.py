@@ -1,16 +1,17 @@
 # app.py (Flask Backend)
 import os
 import logging
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, time
 from sqlalchemy.orm import Session
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, ForeignKey, Time, Text
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, ForeignKey, Time, Enum
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.sql import func
 from dotenv import load_dotenv
 import pytz
+import enum
 
 load_dotenv()
 
@@ -19,11 +20,17 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DATABASE_URL", "sqlite:///./a
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# Настройка логирования
+# Logging configuration
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Модели базы данных
+# Define User Roles
+class UserRole(enum.Enum):
+    DEFAULT = "default"
+    DEVELOPER = "developer"
+    CUSTOMER = "customer"
+
+# Database Models (Simplified - adapt as needed)
 Base = declarative_base()
 
 class User(Base):
@@ -35,6 +42,7 @@ class User(Base):
     working_hours_start = Column(Time, nullable=True)
     working_hours_end = Column(Time, nullable=True)
     is_admin = Column(Boolean, default=False)
+    role = Column(Enum(UserRole), default=UserRole.DEFAULT) # Added user role
 
 class ChatRoom(Base):
     __tablename__ = 'chat_rooms'
@@ -75,7 +83,7 @@ def get_db():
     finally:
         db_session.close()
 
-# API Endpoints (Примеры)
+# API Endpoints (Examples)
 @app.route('/api/rooms', methods=['GET'])
 def list_rooms():
     with app.app_context():
@@ -110,6 +118,7 @@ def create_or_update_user():
     timezone_str = data.get('timezone')
     working_hours_start_str = data.get('working_hours_start')
     working_hours_end_str = data.get('working_hours_end')
+    role_str = data.get('role')  # Added role
 
     if not all([telegram_id, display_name]):
         return jsonify({"error": "Отсутствуют необходимые данные"}), 400
@@ -119,7 +128,7 @@ def create_or_update_user():
         user = db.query(User).filter_by(telegram_id=telegram_id).first()
 
         if user:
-            # Обновить существующего пользователя
+            # Update existing user
             user.display_name = display_name
             if timezone_str:
                 try:
@@ -137,12 +146,27 @@ def create_or_update_user():
                     user.working_hours_end = datetime.strptime(working_hours_end_str, "%H:%M").time()
                 except ValueError:
                     return jsonify({"error": "Неверный формат времени окончания работы"}), 400
+
+            if role_str:  # Update role only if provided
+                try:
+                    user.role = UserRole[role_str.upper()] # Convert to enum and set role
+                except KeyError:
+                    return jsonify({"error": "Неверная роль пользователя"}), 400
+
             db.commit()
             return jsonify({"message": "Пользователь успешно обновлен"}), 200
         else:
-            # Создать нового пользователя
+            # Create new user
             try:
-                user = User(telegram_id=telegram_id, display_name=display_name)
+                # Default Role
+                role = UserRole.DEFAULT
+                if role_str:
+                    try:
+                         role = UserRole[role_str.upper()]
+                    except ValueError:
+                        return jsonify({"error": "Неверная роль пользователя"}), 400
+
+                user = User(telegram_id=telegram_id, display_name=display_name, role=role)
                 if timezone_str:
                     try:
                         pytz.timezone(timezone_str) # Проверить часовой пояс
@@ -159,6 +183,7 @@ def create_or_update_user():
                         user.working_hours_end = datetime.strptime(working_hours_end_str, "%H:%M").time()
                     except ValueError:
                         return jsonify({"error": "Неверный формат времени окончания работы"}), 400
+
                 db.add(user)
                 db.commit()
                 return jsonify({"message": "Пользователь успешно создан"}), 201
@@ -166,8 +191,28 @@ def create_or_update_user():
                 logging.error(f"Ошибка при создании/обновлении пользователя: {e}")
                 return jsonify({"error": f"Ошибка при создании/обновлении пользователя: {e}"}), 500
 
+@app.route('/api/users/<telegram_id>', methods=['GET'])
+def get_user(telegram_id):
+    """Retrieves user data by Telegram ID."""
+    with app.app_context():
+        db: Session = next(get_db())
+        user = db.query(User).filter_by(telegram_id=telegram_id).first()
+
+        if user:
+            user_data = {
+                "telegram_id": user.telegram_id,
+                "display_name": user.display_name,
+                "timezone": user.timezone,
+                "working_hours_start": user.working_hours_start.strftime("%H:%M") if user.working_hours_start else None,
+                "working_hours_end": user.working_hours_end.strftime("%H:%M") if user.working_hours_end else None,
+                "role": user.role.value
+            }
+            return jsonify(user_data), 200
+        else:
+            return jsonify({"error": "Пользователь не найден"}), 404
+
 def authenticate_user(telegram_id):
-    """Аутентифицирует пользователя, создает нового пользователя, если не существует."""
+    """Authenticates user, creates a new user if not exists."""
     with app.app_context():
         db: Session = next(get_db())
         user = db.query(User).filter_by(telegram_id=telegram_id).first()
@@ -217,5 +262,5 @@ def list_rooms_api(user_id):
         return [{"id": room.id, "name": room.name} for room in user_rooms]
 
 if __name__ == '__main__':
-    logging.info("Starting Flask app")
-    app.run(debug=True, host='0.0.0.0') 
+    logging.info("Starting Flask app on port 3000")
+    app.run(debug=True, host='0.0.0.0', port=3000)
