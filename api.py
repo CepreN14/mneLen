@@ -1,36 +1,50 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from fastapi import FastAPI
+from pydantic import BaseModel
+from typing import List
 
-app = Flask(__name__)
-CORS(app)  # Разрешить запросы с других доменов
+app = FastAPI()
+
+# Модели данных
+class Room(BaseModel):
+    id: str
+    name: str
+
+class Message(BaseModel):
+    id: str
+    room_id: str
+    sender: str
+    text: str
 
 # Хранение данных (в реальном проекте используйте базу данных)
 rooms = []
 messages = []
 
-@app.route("/api/add_room", methods=["POST"])
-def add_room():
-    data = request.json
-    room_name = data.get("room_name")
-    if room_name:
-        rooms.append(room_name)
-        return jsonify({"status": "success", "message": f"Комната '{room_name}' создана."})
-    return jsonify({"status": "error", "message": "Неверные данные."})
+# Эндпоинт для получения списка комнат
+@app.get("/api/rooms", response_model=List[Room])
+def get_rooms():
+    return rooms
 
-@app.route("/api/send_message", methods=["POST"])
-def send_message():
-    data = request.json
-    room_name = data.get("room_name")
-    sender = data.get("sender")
-    message = data.get("message")
-    if room_name and sender and message:
-        messages.append({"room_name": room_name, "sender": sender, "message": message})
-        return jsonify({"status": "success", "message": "Сообщение отправлено."})
-    return jsonify({"status": "error", "message": "Неверные данные."})
+# Эндпоинт для создания новой комнаты
+@app.post("/api/rooms", response_model=Room)
+def create_room(name: str):
+    new_room = Room(id=str(len(rooms) + 1), name=name)
+    rooms.append(new_room)
+    return new_room
 
-@app.route("/api/get_data", methods=["GET"])
-def get_data():
-    return jsonify({"rooms": rooms, "messages": messages})
+# Эндпоинт для получения сообщений в комнате
+@app.get("/api/messages", response_model=List[Message])
+def get_messages(room_id: str):
+    room_messages = [msg for msg in messages if msg.room_id == room_id]
+    return room_messages
 
-if __name__ == "__main__":
-    app.run(debug=True)
+# Эндпоинт для отправки сообщения в комнату
+@app.post("/api/messages", response_model=Message)
+def send_message(room_id: str, sender: str, text: str):
+    new_message = Message(
+        id=str(len(messages) + 1),
+        room_id=room_id,
+        sender=sender,
+        text=text
+    )
+    messages.append(new_message)
+    return new_message
