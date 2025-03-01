@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dev/Client Communicator</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #1e1e1e;
+            color: #e0e0e0;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+
+        .sidebar {
+            width: 300px;
+            background-color: #2c2c2c;
+            box-shadow: 2px 0 5px rgba(0, 0, 0, 0.3);
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar h2 {
+            color: #bb86fc;
+            text-align: left;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #3a3a3a;
+            padding-bottom: 10px;
+        }
+
+        .room-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .room-list li {
+            padding: 10px;
+            border-radius: 5px;
+            background-color: #3a3a3a;
+            margin-bottom: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            display: flex;
+            align-items: center;
+        }
+
+        .room-list li:hover {
+            background-color: #4a4a4a;
+        }
+
+        .room-avatar {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background-color: #bb86fc;
+            margin-right: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #fff;
+            font-weight: bold;
+        }
+
+        .room-name {
+            flex-grow: 1;
+        }
+
+        .add-room-button {
+            background-color: #bb86fc;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: auto;
+            transition: background-color 0.3s ease;
+        }
+
+        .add-room-button:hover {
+            background-color: #9c6ade;
+        }
+
+        .main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            background-color: #2c2c2c;
+            padding: 15px;
+            border-bottom: 1px solid #3a3a3a;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .chat-title {
+            font-size: 1.3em;
+            font-weight: bold;
+            margin: 0;
+            flex-grow: 1;
+        }
+
+        .message-list {
+            list-style: none;
+            padding: 20px;
+            margin: 0;
+            flex-grow: 1;
+            overflow-y: auto;
+        }
+
+        .message-list li {
+            padding: 10px;
+            border-radius: 5px;
+            background-color: #3a3a3a;
+            margin-bottom: 10px;
+            word-wrap: break-word;
+        }
+
+        .message-sender {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #bb86fc;
+        }
+
+        .message-input-container {
+            display: flex;
+            padding: 15px;
+            border-top: 1px solid #3a3a3a;
+        }
+
+        .message-input {
+            width: 85%;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            background-color: #4a4a4a;
+            color: #fff;
+            outline: none;
+            font-size: 1em;
+        }
+
+        .send-button {
+            background-color: #bb86fc;
+            color: #fff;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-left: 10px;
+            transition: background-color 0.3s ease;
+        }
+
+        .send-button:hover {
+            background-color: #9c6ade;
+        }
+
+        /* Часовой пояс и часы работы */
+        .user-settings {
+            display: flex;
+            flex-direction: column;
+            margin-left: 20px;
+        }
+
+        .user-settings label {
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="sidebar">
+            <h2>Комнаты</h2>
+            <ul class="room-list" id="roomList">
+                <!-- Rooms will be added here -->
+            </ul>
+            <button class="add-room-button" onclick="addRoom()">Создать комнату</button>
+        </div>
+
+        <div class="main-content">
+            <div class="chat-header">
+                <h2 class="chat-title" id="chatTitle">Выберите комнату</h2>
+                <div class="user-settings">
+                    <label for="timezone">Часовой пояс:</label>
+                    <select id="timezone">
+                        <option value="UTC-12">(UTC-12:00) Baker Island</option>
+                        <option value="UTC-11">(UTC-11:00) Pago Pago</option>
+                        <option value="UTC-10">(UTC-10:00) Hawaii</option>
+                        <!-- ... more timezones ... -->
+                        <option value="UTC+12">(UTC+12:00) Auckland</option>
+                    </select>
+
+                    <label for="workHours">Часы работы:</label>
+                    <input type="text" id="workHours" placeholder="Например: 9:00 - 18:00">
+                </div>
+            </div>
+
+            <ul class="message-list" id="messageList">
+                <!-- Messages will be displayed here -->
+            </ul>
+
+            <div class="message-input-container">
+                <input type="text" class="message-input" id="messageInput" placeholder="Введите сообщение">
+                <button class="send-button" onclick="sendMessage()">Отправить</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = "http://127.0.0.1:5000"; // Замените на URL вашего API
+
+        // State Management
+        let rooms = [];
+        let currentRoomId = null;
+
+        // Функция для получения данных из API
+        async function fetchData() {
+            try {
+                const response = await fetch(`${API_URL}/api/get_data`);
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error("Ошибка при получении данных:", error);
+                return { rooms: [], messages: [] };
+            }
+        }
+
+        // Функция для обновления комнат и сообщений
+        async function updateData() {
+            const data = await fetchData();
+            rooms = data.rooms.map(room => ({
+                id: generateId(),
+                name: room,
+                messages: data.messages.filter(msg => msg.room_name === room)
+            }));
+            renderRooms();
+            if (currentRoomId) {
+                renderMessages();
+            }
+        }
+
+        // Функция для добавления комнаты через API
+        async function addRoom() {
+            const roomName = prompt("Введите название комнаты:");
+            if (roomName) {
+                const response = await fetch(`${API_URL}/api/add_room`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ room_name: roomName })
+                });
+                if (response.ok) {
+                    await updateData();
+                } else {
+                    alert("Ошибка при создании комнаты.");
+                }
+            }
+        }
+
+        // Функция для отправки сообщения через API
+        async function sendMessage() {
+            const messageInput = document.getElementById('messageInput');
+            const messageText = messageInput.value.trim();
+
+            if (messageText && currentRoomId) {
+                const room = rooms.find(room => room.id === currentRoomId);
+                if (room) {
+                    const response = await fetch(`${API_URL}/api/send_message`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            room_name: room.name,
+                            sender: "User", // Замените на имя пользователя
+                            message: messageText
+                        })
+                    });
+                    if (response.ok) {
+                        await updateData();
+                        messageInput.value = "";
+                    } else {
+                        alert("Ошибка при отправке сообщения.");
+                    }
+                }
+            }
+        }
+
+        // Функция для отрисовки комнат
+        function renderRooms() {
+            const roomList = document.getElementById('roomList');
+            roomList.innerHTML = "";
+            rooms.forEach(room => {
+                const li = document.createElement('li');
+                li.setAttribute('data-room-id', room.id);
+                li.onclick = () => setActiveRoom(room.id);
+
+                const avatar = document.createElement('div');
+                avatar.classList.add('room-avatar');
+                avatar.textContent = room.name.charAt(0).toUpperCase();
+
+                const nameSpan = document.createElement('span');
+                nameSpan.classList.add('room-name');
+                nameSpan.textContent = room.name;
+
+                li.appendChild(avatar);
+                li.appendChild(nameSpan);
+                roomList.appendChild(li);
+            });
+        }
+
+        // Функция для отрисовки сообщений
+        function renderMessages() {
+            const messageList = document.getElementById('messageList');
+            messageList.innerHTML = "";
+
+            if (currentRoomId) {
+                const room = rooms.find(room => room.id === currentRoomId);
+                if (room && room.messages) {
+                    room.messages.forEach(message => {
+                        const li = document.createElement('li');
+                        li.innerHTML = `<div class="message-sender">${message.sender}</div>${message.message}`;
+                        messageList.appendChild(li);
+                    });
+                }
+            }
+        }
+
+        // Функция для выбора активной комнаты
+        function setActiveRoom(roomId) {
+            currentRoomId = roomId;
+            const chatTitle = document.getElementById('chatTitle');
+            const room = rooms.find(room => room.id === roomId);
+            chatTitle.textContent = room ? room.name : "Выберите комнату";
+            renderMessages();
+        }
+
+        // Функция для генерации уникального ID
+        function generateId() {
+            return '_' + Math.random().toString(36).substr(2, 9);
+        }
+
+        // Инициализация
+        updateData();
+        setInterval(updateData, 5000); // Обновление данных каждые 5 секунд
+    </script>
+
+</body>
+</html>

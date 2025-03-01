@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+sqlalchemy
+pydantic
+python-telegram-bot
+python-dotenv
+pytz
+requests
+fastapi-middleware
+cors
+flask
+flask-sqlalchemy
+python-dotenv
+SQLAlchemy
+flask-cors
